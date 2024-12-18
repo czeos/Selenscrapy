@@ -1,0 +1,9 @@
+requests == 2.32.3
+pydantic == 2.10.3
+vk-api == 11.9.9
+pytest == 8.3.4
+toml == 0.10.2
+neomodel == 5.4.1
+fastapi == 0.115.6
+uvicorn == 0.34.0
+filelock == 3.16.1
