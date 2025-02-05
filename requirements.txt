@@ -7,3 +7,4 @@ neomodel == 5.4.1
 fastapi == 0.115.6
 uvicorn == 0.34.0
 filelock == 3.16.1
+playwright == 1.49.1

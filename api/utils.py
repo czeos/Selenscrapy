@@ -14,4 +14,4 @@ class StatusCodeMsg(BaseModel):
                 "content": {"application/json": {"example": {"status": f"{self.message}"}}}}
 
     def get_status_msg(self):
-        return {'status': f'{self.message}'}
+        return {'detail': f'{self.message}'}

@@ -1,4 +1,6 @@
 from neomodel import db, config, StructuredNode
+from pydantic import BaseModel
+
 
 class Neo4jClient:
     def __init__(self,username: str, password: str,  uri: str, db_name: str):
@@ -6,7 +8,7 @@ class Neo4jClient:
         Initialize the Neo4j connection.
         """
         config.DATABASE_URL = f"bolt://{username}:{password}@{uri}"
-        # config.DATABASE_NAME = db_name
+        config.DATABASE_NAME = db_name
 
     def create_node(self, node_class: type[StructuredNode], properties) -> StructuredNode:
         """
@@ -24,7 +26,7 @@ class Neo4jClient:
         with db.transaction:
             return node_class.nodes.get_or_none(**filters)
 
-    def create_or_update_node(self, node_class: type[StructuredNode], properties: dict) -> StructuredNode:
+    def create_or_update_node(self, node_class: type[StructuredNode], model: type[BaseModel]) -> StructuredNode:
         """
         Generalized Cypher-based function to create or update a node, ensuring no duplicates.
         """
@@ -32,22 +34,30 @@ class Neo4jClient:
         if not unique_field:
             raise ValueError(f"The model {node_class.__name__} does not define a unique_identifier in its Meta class.")
 
-        unique_value = properties.get(unique_field)
-        if not unique_value:
+        # Extract the properties from the model without nested nodes
+        if not hasattr(model.Meta, 'nested_nodes'):
+            node_data = model.model_dump(by_alias=True)
+        else:
+            node_data = model.model_dump(by_alias=True, exclude=model.Meta.nested_nodes)
+
+
+        if not node_data.get(unique_field):
             raise ValueError(f"Missing required unique field '{unique_field}' in properties.")
 
-        # Dynamically generate the MERGE query
-        query = f"""
-        MERGE (n:{node_class.__label__} {{{unique_field}: $unique_value}})
-        ON CREATE SET {', '.join(f"n.{k} = ${k}" for k in properties.keys())}
-        ON MATCH SET {', '.join(f"n.{k} = ${k}" for k in properties.keys())}
-        RETURN n
-        """
-        params = {'unique_value': unique_value, **properties}
-
         with db.transaction:
-            results, _ = db.cypher_query(query, params)
-            return node_class.inflate(results[0][0])  # Convert raw result into node instance
+            node = node_class.create_or_update(node_data)[0]
+
+        node_relations = {field: getattr(model, field) for field in model.model_fields if
+                     isinstance(getattr(model, field), BaseModel)}
+
+        if node_relations:
+            for field, value in node_relations.items():
+                child_node = self.create_or_update_node(value.Meta.node, value)
+                getattr(node, field).connect(child_node)
+        # Handle relationships
+
+        return node
+
 
     def delete_node(self, node_class: type[StructuredNode], **filters):
         """
@@ -57,26 +67,6 @@ class Neo4jClient:
             node = self.get_node(node_class, **filters)
             if node:
                 node.delete()
-
-    # old code
-    # def create_relationship(
-    #     self,
-    #     from_node: StructuredNode,
-    #     rel_name: str,
-    #     to_node: StructuredNode,
-    # ):
-    #     """
-    #     Create a relationship between two nodes dynamically.
-    #     """
-    #     with db.transaction:
-    #         # Check if the relationship exists dynamically
-    #         if not hasattr(from_node.__class__, rel_name):
-    #             raise ValueError(f"Relationship '{rel_name}' not found on {from_node.__class__.__name__}")
-    #
-    #         # Access the relationship
-    #         relationship = getattr(from_node, rel_name, None)
-    #         # Connect the nodes
-    #         relationship.connect(to_node)
 
     def create_relationship(
             self,

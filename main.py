@@ -2,6 +2,7 @@ import logging
 import uvicorn
 from api import app  # Import the FastAPI app from `api/__init__.py`
 
+
 def start_app():
     # loging
     logging.basicConfig(level=logging.DEBUG)

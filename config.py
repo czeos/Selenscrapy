@@ -1,6 +1,6 @@
 from pathlib import Path
 import toml
-from typing import Any
+from typing import Any, Optional
 from pydantic import BaseModel, model_validator, Field
 
 CONFIG_PATH = Path(__file__).parent / 'config.toml'
@@ -15,6 +15,7 @@ class VkConfig(BaseModel):
     AUTH_URL: str
     LOGIN: str
     PWD: str
+    ACCESS_TOKEN: Optional[str] = Field(default='')
 
 class Neo4jConfig(BaseModel):
     USERNAME: str
