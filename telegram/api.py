@@ -1,58 +1,59 @@
-from fastapi import FastAPI, HTTPException
+from tgdb import TgdbBotSearch
+from fastapi import FastAPI
 from fastapi.responses import StreamingResponse
 import io
-from scraper import TelegramScraper
-from model import TelegramUser
 import uvicorn
-import configparser
+from telegram_base import BotContext
+from scraper import TelegramScraper
+from config import Config
 
 
-config = configparser.ConfigParser()
-config.read('config.ini')
-
-api_id = config['telegram']['api_id']
-api_hash = config['telegram']['api_hash']
+config = Config()
+api_id = config.get('telegram', 'api_id')
+api_hash = config.get('telegram', 'api_hash')
 
 app = FastAPI()
 
-#TODO: channel info
-@app.get("/info/channel/{channel_name}")
-async def get_channel_info(channel_name: str):
+@app.get("/info/entity/{param}")
+async def get_user_info(param: str):
     try:
-        chanel_link = f"https://t.me/{channel_name}"
         telegramScraper = TelegramScraper("scraper_session", api_id, api_hash)
-        tg_channel = await telegramScraper.channel_info(chanel_link)
-        
-        return tg_channel
-    except Exception as e:
-        raise HTTPException(status_code=404, detail=str(e))
-
-#TODO: user info
-@app.get("/info/user/{username}")
-async def get_user_info(username: str):
-    telegramScraper = TelegramScraper("scraper_session", api_id, api_hash)
-    tg_user = await telegramScraper.scrape_user(username)
-
+        if telegramScraper.is_valid_phone_number(param):
+            tg_user = await telegramScraper.check_telegram_phone(param)
+        else:
+            tg_user = await telegramScraper.check_telegram_entity(username=param)
+    finally:
+        await telegramScraper.close_client()
+    
     return tg_user
 
-#TODO: scrape channel, csv
 @app.get("/channel/{channel_name}")
-async def scrape_channel(channel_name: str,csv: bool = False):
+async def scrape_channel(channel_name: str,csv: bool = False, offset_id: int = 0):
 
     chanel_link = f"https://t.me/{channel_name}"
     telegramScraper = TelegramScraper("scraper_session", api_id, api_hash)
+    try:
+        if csv:
+            csv_content = await telegramScraper.scrape_channel_csv(channel=chanel_link, offset_id=offset_id, exclude_fields = ['data', 'replies','sender','sender.photos'])
+            response = StreamingResponse(io.StringIO(csv_content), media_type="text/csv")
+            response.headers["Content-Disposition"] = f"attachment; filename={channel_name}.csv"
 
-    if csv:
-        csv_content = await telegramScraper.scrape_channel_csv(channel=chanel_link)
-        response = StreamingResponse(io.StringIO(csv_content), media_type="text/csv")
-        response.headers["Content-Disposition"] = f"attachment; filename={channel_name}.csv"
+            return response
 
-        return response
+        else:
+            tg_channel = await telegramScraper.scrape_channel(channel=chanel_link, offset_id=offset_id)
+            return tg_channel
+    finally:
+        await telegramScraper.close_client()
+
+@app.get("/bot/{param}")
+async def info(param: str):
     
-    else:
-        tg_channel = await telegramScraper.scrape_channel(channel=chanel_link, offset_id=0)
-        return tg_channel
+    tgdbBotSearch  = TgdbBotSearch(api_id, api_hash)
+    context = BotContext(tgdbBotSearch)
+    result = await context.work(param)
 
+    return { "response": result}    
 
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
