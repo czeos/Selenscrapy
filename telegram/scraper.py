@@ -1,19 +1,21 @@
-from telethon import TelegramClient
+import io
+from telethon import TelegramClient, functions
 import sys
 import asyncio
-import io
-from telethon.tl.types import MessageMediaPhoto, MessageMediaDocument, User, PeerChannel,ChannelParticipantsSearch
+from telethon.tl.types import ChannelParticipantsSearch
 import aiohttp
 from telethon.errors import RPCError
 from model import TelegramMessage, TelegramUser, TelegramChannel, Photo
 from telethon.tl.functions.users import GetFullUserRequest
-from telethon.tl.functions.channels import GetParticipantsRequest
-import csv
+from telethon.tl.functions.channels import GetParticipantsRequest,GetFullChannelRequest
 import logging
 import base64
+from telethon.tl import types
+import re
+import pandas as pd
+import json
 
 
-# Configure logging
 LOG_FILE = 'scraper.log'
 logging.basicConfig(
     level=logging.INFO,
@@ -25,25 +27,69 @@ logging.basicConfig(
 )
 
 class TelegramScraper():
+
+
     def __init__(self, session_name:str, api_id: int, api_hash:str):
         self.session_name = session_name
         self.api_id = api_id    
         self.api_hash = api_hash
 
         self.client = TelegramClient(session_name, api_id, api_hash)
-    
+
+    def is_valid_phone_number(self, phone_number: str) -> bool:
+
+        phone_pattern = re.compile(r"^\+?[1-9]\d{1,14}$")
+        return bool(phone_pattern.match(phone_number))
+
+    def get_human_readable_user_status(self,status):
+        match status:
+            case types.UserStatusOnline():
+                return "Currently online"
+            case types.UserStatusOffline():
+                return status.was_online.strftime("%Y-%m-%d %H:%M:%S %Z")
+            case types.UserStatusRecently():
+                return "Last seen recently"
+            case types.UserStatusLastWeek():
+                return "Last seen last week"
+            case types.UserStatusLastMonth():
+                return "Last seen last month"
+            case _:
+                return "Unknown"
+
+    def get_entity_type(self,type):
+        match type:
+            case types.Chat:
+                return "Group"
+            case types.Channel:
+                return "Channel"
+            case types.User:
+                return "User"
+            case types.Message:
+                return "Message"
+            case _:
+                return "Unknown"
+
     def create_telegram_user(self, user) -> TelegramUser:
             return TelegramUser(
                 id=user.id,
                 username=user.username,
-                user_hash=user.access_hash,
+                user_hash=getattr(user, 'access_hash', None),
                 firstname=getattr(user, 'first_name', None),
                 lastname=getattr(user, 'last_name', None),
                 phone=getattr(user, 'phone', None),
-                bot=getattr(user, 'bot', None))
+                bot=getattr(user, 'bot', None),
+                user_was_online=self.get_human_readable_user_status(user.status) if hasattr(user, 'status') else None
+                )
+
+    def create_telegram_channel(self, full_channel, entity) -> TelegramChannel:
+        return TelegramChannel(id=full_channel.full_chat.id,
+                                         title=entity.title,
+                                         name=entity.username,
+                                         participants_count=full_channel.full_chat.participants_count if hasattr(full_channel.full_chat, 'participants_count') else None,
+                                         description=full_channel.full_chat.about if hasattr(full_channel.full_chat, 'about') else None,
+                                         type = self.get_entity_type(type(entity)))
 
     def remove_duplicates(self, items):
-        #TODO: Jak nechat jen jednoho usera ale toho ktery ma profilovku
         seen_ids = set()
         unique_list = []
         for item in items:
@@ -54,9 +100,12 @@ class TelegramScraper():
         return unique_list
           
     async def start_client(self):
-
         if not self.client.is_connected():
             await self.client.start()
+
+    async def close_client(self):
+        if self.client.is_connected():
+            await self.client.disconnect()
 
     async def download_media(self, message):
         
@@ -98,44 +147,23 @@ class TelegramScraper():
         try:
             users = []
             participants = await self.client(GetParticipantsRequest(channel, ChannelParticipantsSearch(''), 0, 100,hash=0))
-            for user in participants.users: 
-                tg_user = self.create_telegram_user(user)       
-                users.append(tg_user)
-                
-            return users
+            return participants.users
+        
         except Exception as e:
             logging.error(f'Failed to get users from the channel {channel}: {e}')
-
-    async def channel_info(self, channel_name = None, channel_id = None):
-        await self.start_client()
-        try:
-            if channel_id:
-                entity = await self.client.get_entity(PeerChannel(channel_id))
-            else:
-                entity = await self.client.get_entity(channel_name)
-
-        except Exception as e:
-            logging.error(f"Failed to get entity for channel {channel_name}: {e}")
-            return None
-        return {
-            "id": entity.id,
-            "title": entity.title,
-            "username": entity.username,
-            "participants_count": entity.participants_count if hasattr(entity, 'participants_count') else None,
-            "description": entity.about if hasattr(entity, 'about') else None
-        }
 
     async def scrape_channel(self,channel, limit=100,offset_id=0):
         
         await self.start_client()
         try:
             entity = await self.client.get_entity(channel)
-            tg_channel = TelegramChannel(id=entity.id)
+            full_channel = await self.client(GetFullChannelRequest(entity))
+            tg_channel = self.create_telegram_channel(full_channel, entity)
 
             total_messages = 0
             processed_messages = 0
 
-            async for message in self.client.iter_messages(entity, offset_id=offset_id, reverse=False,limit=limit):
+            async for message in self.client.iter_messages(entity, offset_id=offset_id, reverse=True,limit=limit):
                 total_messages += 1
 
             if total_messages == 0:
@@ -144,7 +172,7 @@ class TelegramScraper():
             
             users = []
             processed_messages = 0
-            async for message in self.client.iter_messages(entity, offset_id=offset_id, reverse=False,limit=limit):
+            async for message in self.client.iter_messages(entity, offset_id=offset_id, reverse=True,limit=limit):
                 try:
                     sender = await message.get_sender()
                     tg_msg = TelegramMessage(id=message.id,
@@ -152,12 +180,12 @@ class TelegramScraper():
                                                 date=message.date,
                                                 reply_to_msg_id=message.reply_to_msg_id,
                                                 views=message.views,
-                                                content=message.text
-                                                )
+                                                content=message.text,
+                                                type = self.get_entity_type(type(message)))
 
                     if message.forward:  
-                        fwd_from = await self.channel_info(channel_id = message.forward.from_id.channel_id)
-                        tg_msg.forward = fwd_from["username"]
+                        fwd_from = await self.check_telegram_entity(id = message.forward.from_id.channel_id)
+                        tg_msg.forward_from = fwd_from.name
 
                     if sender:
                         tg_user = self.create_telegram_user(sender)
@@ -169,7 +197,7 @@ class TelegramScraper():
                     #if message.replies:
                     #    tg_msg.replies.append(message.replies)
 
-                    if message.media:
+                    if message.media and False:
                         media_bytes,file_name = await self.download_media(message)
                         tg_msg.data = media_bytes
                         tg_msg.file_name = file_name
@@ -199,46 +227,85 @@ class TelegramScraper():
         except Exception as e:
             logging.error(e)
 
-    async def scrape_channel_csv(self,channel, exclude_fields=None):
+    async def scrape_channel_csv(self,channel, offset_id=0, exclude_fields=None):
         if exclude_fields is None:
             exclude_fields = []
 
-        exclude_fields.extend(['data', 'replies'])
-
-        tg_channel = await self.scrape_channel(channel = channel)
-
+        tg_channel = await self.scrape_channel(channel = channel,offset_id=offset_id)
+      
         if not tg_channel or not tg_channel.messages:
             return
 
-        fields = [field for field in tg_channel.messages[0].__dict__.keys() if field not in exclude_fields]
-        
+        messages_json = json.dumps([message.dict() for message in tg_channel.messages], default=str)
+        df = pd.json_normalize(json.loads(messages_json))   
+        df.drop(columns=exclude_fields, inplace=True, errors='ignore')
+
         output = io.StringIO()
-        writer = csv.writer(output)
-        writer.writerow(fields)
-        
-        for msg in tg_channel.messages:
-            row = [getattr(msg, field) for field in fields]
-            writer.writerow(row)
+        df.to_csv(output, index=False)
+        output.seek(0)
 
         return output.getvalue()
 
-    async def scrape_user(self, username):
+    async def check_telegram_phone(self, phone_number):
+        await self.start_client()
         try:
-            await self.start_client()
-            inputUser = await self.client.get_entity(username)
-            full_user = await self.client(GetFullUserRequest(inputUser))
-
-            users = full_user.to_dict().get("users", [])
+            contact = types.InputPhoneContact(
+                client_id=0, phone=phone_number, first_name="", last_name=""
+            ) 
+            contacts = await self.client(functions.contacts.ImportContactsRequest([contact]))            
+            
+            users = contacts.to_dict().get("users", [])
             number_of_matches = len(users)
 
             if number_of_matches == 1:
-                user = full_user.users[0]
-                
+                updates_response: types.Updates = await self.client(functions.contacts.DeleteContactsRequest(id=[users[0].get("id")]))
+                user = updates_response.users[0]
+
                 tg_user = self.create_telegram_user(user)
-                
-                #user.about, user.status
-                tg_user.photos = await self.download_profile_photos(user)
-                
-            return tg_user  
+
+                return tg_user
+            else:
+                return None  
+
+        except Exception as e:
+            logging.error(f"Failed to check Telegram account for phone number {phone_number}: {e}")
+
+    async def check_telegram_entity(self, username = None, id = None):
+        try:
+            await self.start_client()
+            if id is not None:
+                input = await self.client.get_entity(id)
+            else:
+                input = await self.client.get_entity(username)
+
+            if isinstance(input, types.User):
+                full_user = await self.client(GetFullUserRequest(input))
+
+                users = full_user.to_dict().get("users", [])
+                number_of_matches = len(users)
+
+                if number_of_matches == 1:
+                    user = full_user.users[0]
+                    
+                    tg_user = self.create_telegram_user(user)
+                    tg_user.photos = await self.download_profile_photos(user)
+
+                tg_user.type = "User"
+                return tg_user
+
+            elif isinstance(input, types.Channel):
+
+                full_channel = await self.client(GetFullChannelRequest(input))
+                tg_channel = self.create_telegram_channel(full_channel, input) 
+
+                return tg_channel
+
+            elif isinstance(input, types.Chat):
+
+                full_channel = await self.client(GetFullChannelRequest(input))
+                tg_channel = self.create_telegram_channel(full_channel, input) 
+                return tg_channel
+
         except Exception as e:
             logging.error(f"An error occurred while fetching user info: {e}")
+

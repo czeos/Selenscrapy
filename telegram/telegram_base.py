@@ -1,6 +1,6 @@
 from telethon import TelegramClient, events
 import asyncio
-
+from abc import ABC, abstractmethod
 
 class TelegramBotBase():
 
@@ -40,3 +40,21 @@ class TelegramBotBase():
                 self.client.remove_event_handler(_handler)
 
         return await future
+
+class Strategy(ABC):
+
+    @abstractmethod
+    async def send(self, msg: str) -> str:
+        pass
+
+
+class BotContext():
+
+    def __init__(self, strategy: Strategy):
+        self.strategy = strategy
+
+    def setStrategy(self, strategy: Strategy):
+        self.strategy = strategy
+
+    async def work(self, msg: str) -> str:
+        return await self.strategy.send(msg)
