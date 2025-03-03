@@ -58,6 +58,7 @@ except AuthError as e:
 # function to scrape vk data
 def scrape_vk_entity(vk_client: VkClient, method: str, request: BaseModel, responseSchema: Type[BaseModel]) -> BaseModel:
     """
+    General method for interaction with VK API
     Scrape VK data entity, interaction with concrete VK API method
     :param vk_client: VkClient
     :param method: str
@@ -86,10 +87,7 @@ def get_user_info(vk_client: VkClient, user_id: int, ) -> VkUserResponseSchema:
     :return:
     """
     request = VkUserRequestSchema(user_ids=user_id, fields= ','.join(get_fields_from_schema(VkUserResponseSchema)))
-    response = scrape_vk_entity(vk_client, 'users.get', request, VkUserResponseSchema)
-    pass
-
-
+    return scrape_vk_entity(vk_client, 'users.get', request, VkUserResponseSchema)
 
 
 def get_user_friend_lists(vk_client: VkClient, user_id: int) -> List[VkUserFriendLis]:
@@ -100,10 +98,10 @@ def get_user_friend_lists(vk_client: VkClient, user_id: int) -> List[VkUserFrien
     :return:
     """
     request = VkUserRequestSchema(user_id=user_id)
-    response = scrape_vk_entity(vk_client, 'friends.getLists', request, VkUserFriendLis)
-    return response
+    return scrape_vk_entity(vk_client, 'friends.getLists', request, VkUserFriendLis)
 
-def get_user_friends(vk_client: VkClient, user_id: int,  fields: Optional[list[str]] = None) -> List[VkUserResponseSchema]:
+
+def get_user_friends(vk_client: VkClient, user_id: int, list_id: Optional[int], fields: Optional[list[str]] = None) -> List[VkUserResponseSchema]:
     """
     Get all users friends
     :param vk_client:
@@ -115,9 +113,9 @@ def get_user_friends(vk_client: VkClient, user_id: int,  fields: Optional[list[s
     """
     if fields is None:
         fields = [field for field in VkUserResponseSchema.model_fields.keys()]
-    request = VkUserRequestSchema(user_id=user_id, list_id=list_id, order=order, fields=','.join(fields))
-    response = scrape_vk_entity(vk_client, 'friends.get', request, VkUserResponseSchema)
-    return response
+    request = VkUserRequestSchema(user_id=user_id, list_id=list_id, fields=','.join(fields))
+    return scrape_vk_entity(vk_client, 'friends.get', request, VkUserResponseSchema)
+
 
 class VkUserAPI(BaseModel):
     """
@@ -245,10 +243,6 @@ if __name__ == '__main__':
     from vkontakte.vk_api_schema import VkUserRequestSchema, VkUserResponseSchema
     request = VkUserRequestSchema(user_ids=612442580)
     response = scrape_vk_entity(vk_client, 'users.get', request, VkUserResponseSchema)
-    pass
-    # screen_name_request = VkScreenNameResolveRequestSchema(screen_name=screen_name_url)
-    # screen_name_response = scrape_vk_entity(vk_client, 'utils.resolveScreenName', screen_name_request, VkScreenNameResolveResponse)
-
 
 
     # user_request = VkUserAPI(id=1, vk_client=vk_client, neo_client=neo_client)

@@ -43,6 +43,13 @@ class VkScreenNameResolveRequestSchema(BaseModelConfig):
         return data
 
 class VkScreenNameResolveResponse(BaseModelConfig):
+    """
+    Response model for the Vkontakte screen name resolve
+    attributes:
+    - object_id: int - Object ID (integer)
+    - type: str - Object type (string)
+    - screen_name: Optional[str] - Screen name (string)
+    """
     screen_name: Optional[str] = Field(default='', description="Screen name (string)")
     object_id: int = Field(..., description="Object ID (integer)")
     type: str = Field(..., description="Object type (string)")
@@ -70,7 +77,10 @@ class VkUserRequestSchema(BaseModelConfig):
     user_ids: int = Field(..., description="Vk user ID (integer), comma-separated list of IDs",
                     serialization_alias="vk_id",
                     validation_alias=AliasChoices('user_ids', 'vk_id', 'id'))
-    fields: Optional[List[str]] = Field(None, description="List of fields to retrieve.")
+    fields: Optional[List[str]] = Field(None, description="OPTIONAL: Specify which fields will be put to VK "
+                                                          "API method 'users.get'. Description here: "
+                                                          "https://dev.vk.com/en/reference/objects/user. "
+                                                          "If None, all fields will be returned.")
     from_group: Optional[int] = Field(None, description="Whether the user is from a group.")
 
 

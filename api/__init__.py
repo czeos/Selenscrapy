@@ -7,7 +7,7 @@ from api.schema import APOCTest
 from config import Config, CONFIG_PATH
 from db import Neo4jClient
 from vkontakte.api import vkontakte_router
-from vkontakte.api_schema import VkUserRequest
+from vkontakte.api_schema import VkUserApiRequest
 
 app = FastAPI()
 app.include_router(vkontakte_router)
@@ -51,7 +51,7 @@ async def apoc_load_Json_query_path(id: int):
 
 
 @app.post("/jsonParams", tags=["APOC"])
-async def apoc_load_JsonParam_query_path(params: VkUserRequest):
+async def apoc_load_JsonParam_query_path(params: VkUserApiRequest):
     """
     Endpoint to check if APOC is working and sending POST data to external services with parameters in the url path.
 

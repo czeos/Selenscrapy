@@ -3,9 +3,11 @@ from fastapi import APIRouter, HTTPException
 
 from config import setting
 from db import Neo4jClient
-from vkontakte.api_schema import VkUserRequest, VkCredentialsResponse, ScreenNameResolveRequest
-from vkontakte.scrapers import VkClient, VkUserAPI, ScreeNameAPI, vk_client
+from vkontakte.api_schema import VkUserApiRequest, VkCredentialsResponse, ScreenNameResolveApiRequest
+from vkontakte.scrapers import VkClient, VkUserAPI, vk_client, scrape_vk_entity
 from vkontakte.utils import update_vk_credentials
+from vkontakte.vk_api_schema import VkWallRequestSchema, VkScreenNameResolveRequestSchema, VkScreenNameResolveResponse, \
+    VkUserRequestSchema, VkUserResponseSchema
 
 vkontakte_router = APIRouter(
     prefix="/vkontakte",
@@ -35,12 +37,27 @@ def update_vk_credentials(credentials: VkCredentialsResponse):
         raise HTTPException(status_code=500, detail=str(e))
 
 @vkontakte_router.post("/user")
-def get_user_profile(user_request: VkUserRequest):
+def get_user_profile(user_request: VkUserApiRequest):
     """
     Method call Vkontakte scraper and scrape user data from VKontakte API. Data will be imported into neo4j database.
     Method will return the status of the operation as JSON. All status messages codes are 200, because problems with error handling on the side of no4j apoc
     """
     logging.info(f"get_user_profile called with user_request: {user_request}")
+
+    request = VkUserRequestSchema(**user_request.request.model_dump())
+
+    if not request.user_ids:
+        logging.ERROR(f"User ID is not provided")
+        raise HTTPException(status_code=400, detail="User ID must be provided")
+
+    try:
+        logging.info(f"Fetching VkUser info for user ID: {user_request.id}")
+        response = scrape_vk_entity(vk_client, 'users.get', request, VkUserResponseSchema)
+    except Exception as e:
+        logging.error(f"Get VkUser Profile failed for user ID: {user_request.id} - {str(e)}")
+        # raise HTTPException(status_code=500, detail=f'Get User Profile failed: {str(e)}')
+        return {"code": 500, "detail": f"Get User Profile failed for user ID: {user_request.id} - {str(e)}"}
+
 
     neo_client = Neo4jClient(uri=setting.neo4j.URI,
                              username=setting.neo4j.USERNAME,
@@ -49,13 +66,7 @@ def get_user_profile(user_request: VkUserRequest):
 
     user = VkUserAPI(id=user_request.id, vk_client=vk_client, neo_client=neo_client)
 
-    try:
-        logging.info(f"Fetching VkUser info for user ID: {user_request.id}")
-        user.get_user_info(fields=user_request.fields) # get user info
-    except Exception as e:
-        logging.error(f"Get VkUser Profile failed for user ID: {user_request.id} - {str(e)}")
-        # raise HTTPException(status_code=500, detail=f'Get User Profile failed: {str(e)}')
-        return {"code": 500, "detail": f"Get User Profile failed for user ID: {user_request.id} - {str(e)}"}
+
 
     try:
         logging.info(f"Saving VkUser into noe4J: {user_request.id}")
@@ -86,7 +97,7 @@ def get_user_profile(user_request: VkUserRequest):
     return {"code": 200, "detail": f"User profile id {user_request.id} is saved to the database."}
 
 @vkontakte_router.post("/wall")
-def get_wall(user_request: VkUserRequest):
+def get_wall(user_request: VkUserApiRequest):
     """
     Method call Vkontakte scraper and scrape user data from VKontakte API. Data will be imported into neo4j database.
     Method will return the status of the operation as JSON. All status messages codes are 200, because problems with error handling on the side of no4j apoc
@@ -137,21 +148,15 @@ def get_wall(user_request: VkUserRequest):
     return {"code": 200, "detail": f"User profile id {user_request.id} is saved to the database."}
 
 @vkontakte_router.post("/resolve")
-def resolve_screen_name(request: ScreenNameResolveRequest):
-    resolve = ScreeNameAPI(vk_client=vk_client)
-    if request.screen_name:
-        try:
-            response = resolve.resolve_screen_name(request.screen_name)
-            return response.model_dump()
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=str(e))
+def resolve_screen_name(request: ScreenNameResolveApiRequest):
+    request = VkScreenNameResolveRequestSchema(screen_name=request.screen_name)
 
-    elif request.url:
-        screen_name = resolve.strip_url(request.url)
-        try:
-            response = resolve.resolve_screen_name(screen_name)
-            return response.model_dump()
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=str(e))
-    else:
+    if not request.screen_name:
         raise HTTPException(status_code=400, detail="Either screen_name or url must be provided.")
+
+    try:
+        response = scrape_vk_entity(vk_client, 'utils.resolveScreenName', request, VkScreenNameResolveResponse)
+        return response.model_dump()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
