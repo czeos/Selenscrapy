@@ -55,7 +55,7 @@ def get_user_profile(user_request: VkUserApiRequest):
     except Exception as e:
         logging.error(f"Get VkUser Profile failed for user ID: {request.user_ids} - {str(e)}")
         # raise HTTPException(status_code=500, detail=f'Get User Profile failed: {str(e)}')
-        return {"code": 500, "detail": f"Get User Profile failed for user ID: {request.user_ids}} - {str(e)}"}
+        return {"code": 500, "detail": f"Get User Profile failed for user ID: {request.user_ids} - {str(e)}"}
 
 
     neo_client = Neo4jClient(uri=setting.neo4j.URI,
