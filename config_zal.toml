@@ -1,0 +1,18 @@
+[telegram]
+API_ID = ""
+API_HASH = ""
+PHONE = ""
+
+[vkontakte]
+API_VERSION = "
+AUTH_URL = ""
+LOGIN = ""
+PWD = ""
+ACCES_TOKEN = ""
+
+
+[neo4j]
+USERNAME = "neo4j"
+PASSWORD = ""
+URI = ""
+DB_NAME = ""
