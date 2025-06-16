@@ -1,5 +1,4 @@
 /config.toml
-/config_zal.toml
 /.venv/
 __pycache__/
 *.log
