@@ -2,8 +2,7 @@ from datetime import datetime
 from pydantic import BaseModel, Field, AliasChoices, field_validator, ConfigDict
 from typing import Optional, List, Dict, Any
 from functools import partial
-from db.model import VkUserNode, CityNode, CountryNode
-
+from neogr_model.model import VkUserNode, CityNode, CountryNode
 
 class BaseModelConfig(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True, extra='ignore')

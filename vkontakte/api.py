@@ -1,8 +1,7 @@
 import logging
 from fastapi import APIRouter, HTTPException
-
+from neogr_model.client import Neo4jClient
 from config import setting
-from db import Neo4jClient
 from vkontakte.api_schema import VkUserApiRequest, VkCredentialsResponse, ScreenNameResolveApiRequest
 from vkontakte.scrapers import VkClient, VkUserAPI, vk_client, scrape_vk_entity
 from vkontakte.utils import update_vk_credentials
@@ -51,12 +50,12 @@ def get_user_profile(user_request: VkUserApiRequest):
         raise HTTPException(status_code=400, detail="User ID must be provided")
 
     try:
-        logging.info(f"Fetching VkUser info for user ID: {user_request.id}")
+        logging.info(f"Fetching VkUser info for user ID: {request.user_ids}")
         response = scrape_vk_entity(vk_client, 'users.get', request, VkUserResponseSchema)
     except Exception as e:
-        logging.error(f"Get VkUser Profile failed for user ID: {user_request.id} - {str(e)}")
+        logging.error(f"Get VkUser Profile failed for user ID: {request.user_ids} - {str(e)}")
         # raise HTTPException(status_code=500, detail=f'Get User Profile failed: {str(e)}')
-        return {"code": 500, "detail": f"Get User Profile failed for user ID: {user_request.id} - {str(e)}"}
+        return {"code": 500, "detail": f"Get User Profile failed for user ID: {request.user_ids}} - {str(e)}"}
 
 
     neo_client = Neo4jClient(uri=setting.neo4j.URI,

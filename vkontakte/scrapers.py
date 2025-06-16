@@ -3,12 +3,12 @@ from pydantic import BaseModel, ConfigDict
 from vk_api import VkApi, ApiError, LoginRequired, AuthError
 from config import VkConfig
 from vkontakte.vk_api_schema import VkUserResponseSchema, VkUserFriendLis, VkScreenNameResolveResponse, VkUserRequestSchema
-from db import Neo4jClient, VkUserNode
+from neogr_model.client import Neo4jClient
 from vkontakte.logger import vk_logger
 from vkontakte.auth import authentication_with_state, save_authentication_state
 from config import setting
 from vkontakte.utils import update_vk_credentials
-
+from neogr_model.model import VkUserNode
 
 ## vk client
 class VkClient(BaseModel):

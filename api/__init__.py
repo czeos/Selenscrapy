@@ -5,7 +5,7 @@ from api.logger import api_logger
 from api.utils import StatusCodeMsg
 from api.schema import APOCTest
 from config import Config, CONFIG_PATH
-from db import Neo4jClient
+from neogr_model.client import  Neo4jClient
 from vkontakte.api import vkontakte_router
 from vkontakte.api_schema import VkUserApiRequest
 
